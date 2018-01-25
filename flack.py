@@ -221,3 +221,198 @@ class Message(db.Model):
         target.expand_links()
 
 db.event.listen(Message.source, 'set', Message.on_changed_source)
+
+@basic_auth.verify_password
+def verify_password(nickname, password):
+    #password verification callback
+    if not nickname or not password:
+        return False
+    user = User.query.filter_by(nickname=nickname).first()
+    if user is None or user.verify_password(password):
+        return False
+    user.ping()
+    db.session.add(user)
+    db.session.commit()
+    g.current_user = user
+    return True
+
+@basic_auth.error_handler
+def password_error():
+    #return 401 error to the client
+    # to avoid login prompts in the browser, use the "Bearer" realm.
+    return (jsonify({'error': 'Authentication required'}),401,{'WWW-Authenticate' : 'Bearer realm = "Authentication Required"'})
+
+@token_auth.verify_token
+def verify_token(token):
+    #token verification callback
+    user = User.query.filter_by(token=token).first()
+    if user is None:
+        return False
+    user.ping()
+    db.session.add(user)
+    db.session.commit()
+    g.current_user = user
+    return True
+
+@token_auth.error_handler
+def token_error():
+    #return a 401 error to the client
+    return (jsonify({'error':'Authentication required'}, 401, '{WWW-Authenticate}' : 'Bearer realm = "Authentication required"'))
+
+@token_optional_auth.verify_token
+def verify_optional_token(token):
+    #alternative token Authentication that allows anonymous logins
+    if token == "":
+        #no token provided mark the logged in users as none and continue
+        g.current_user = None
+        return True
+    #but if token was provided verify token
+    return verify_token(token)
+
+@app.before_first_request
+def before_first_request():
+    #start a background thread for users that leave
+    def find_offline_users():
+        while True:
+            User.find_offline_users()
+            db.session.remove()
+            time.sleep(5)
+
+    if not app.config['TESTING']:
+        thread = threading.Thread(target=find_offline_users)
+        thread.start()
+
+@app.before_request
+def before_request():
+    #update request per second stats
+    t = timestamp()
+    while len(request_stats) > 0 and request_stats[0] < t - 15:
+        del request_stats[0]
+    request_stats.append(t)
+
+@app.route('/'):
+def index():
+    #serve client side application
+    return render_template('index.html')
+
+@app.route('/api/users', methods=['POST'])
+def new_user():
+    #Register a new user, this endpoint is publicly available
+    user = User.create(request.get_json() or {}):
+    if User.query.filter_by(nickname=user.nickname).first() in not None:
+        abort(400)
+    db.session.add(user)
+    db.session.commit()
+    r = jsonify(user.to_dict())
+    r.status_code = 201
+    r.headers['location'] = url_for('get_user', id = user.id)
+    return r
+
+@app.route('api/users', methods=['GET'])
+def get_users():
+    """Return list of users. endpoint is public but if the client has a token it should send it, indicationg that the user is online"""
+    users = User.query.order_by(User.updated_at.asc(), User.nickname.asc())
+    if request.args.get('online'):
+        users = users.filter_by(online = (request.args.get('online') != '0'))
+    if request.args.get('updated_since'):
+        users = users.filter(
+            User.updated_at > int(request.args.get('updated_since'))
+        )
+    return jasonify({'users' : [user.to_dict() for user in users.all()]})
+
+@app.route('api/users/<id>', methods=['GET'])
+@token_optional_auth.login_required
+def get_user(id):
+    """
+    Return a user.
+    This endpoint is publicly available, but if the client has a token it
+    should send it, as that indicates to the server that the user is online."""
+    return jasonify(User.query.get_or_404(id).to_dict())
+
+@app.route('api/users/<id>', methods=['POST'])
+@token.auth.login_required
+def edit_user(id):
+    """
+    Modify an existing user.
+    This endpoint is requires a valid user token.
+    Note: users are only allowed to modify themselves.
+    """
+    user = User.query.get_or_404(id):
+    if user != g.current_user:
+        abort(403)
+    user.from_dict(request.get_json() or {})
+    db.session.add(user)
+    db.session.commit()
+    return '',204
+
+@app.route('api/tokens', methods=['POST'])
+@basic_auth.login_required
+def new_token():
+    """
+    Request a user token.
+    This endpoint is requires basic auth with nickname and password.
+    """
+    if g.current_user.token is None:
+        g.current_user.generate_token():
+        db.session.add(g.current_user)
+        db.session.commit()
+    return jsonify({'token' : g.current_user.token})
+
+@app.route('api/tokens', methods=['DELETE'])
+@token_auth.login_required
+def revoke_token():
+    """Revoke user token, this requires valid user token"""
+    g.current_user.token = None
+    db.session.add(g.current_user)
+    db.session.commit()
+    return "", 204
+
+@app.route('api/messages', methods=['GET'])
+@token_optional_auth.login_required
+def get_messages():
+    """
+    Return list of messages.
+    This endpoint is publicly available, but if the client has a token it
+    should send it, as that indicates to the server that the user is online.
+    """
+    since = int(request.args.get('updated_since', '0'))
+    day_ago = timestamp() - 24 * 60 * 60
+    if since < day_ago:
+        #do not return msgs from more than a day ago
+        since = day_ago
+    msgs = Message.query.filter(Message.updated_at > since).order_by(Message.updated_at)
+    return jasonify({'messages' : [msg.to_dict for msg in msgs.all()]})
+
+@app.route('api/messages/<id>', methods=['GET'])
+@token_optional_auth.login_required
+def get_messages(id):
+    """
+    Return a message.
+    This endpoint is publicly available, but if the client has a token it
+    should send it, as that indicates to the server that the user is online.
+    """
+    return jasonify(Message.query.get_or_404(id).to_dict)
+
+@app.route('api/messages/<id>', methods=['PUT'])
+@token_auth.login_required
+def edit_message(id):
+    """
+    Modify an existing message.
+    This endpoint is requires a valid user token.
+    Note: users are only allowed to modify their own messages.
+    """
+    msg = Message.query.get_or_404(id)
+    if msg.user != g.current_user:
+        abort(403)
+    msg.from_dict(request.get_json() or {})
+    db.session.add(msg)
+    db.session.commit()
+    return '', 204
+
+@app.route('/stats', methods=['GET'])
+def get_stats():
+    return jasonify('requests_per_second' : len(request_stats) / 15)
+
+if __name__ == '__main__':
+    db.create_all()
+    app.run(host='0.0.0.0', debug = True)
