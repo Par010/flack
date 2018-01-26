@@ -126,7 +126,7 @@ class User(db.Model):
 @staticmethod
 def find_offline_users():
     #find the users that are offline
-    users = User.query.filter(User.last_seen_at < timestamp() - 60, User.online == True).all()
+    users = User.query.filter_by(User.last_seen_at < timestamp() - 60, User.online == True).all() #check if the user has been offline for more than a min
     for user in users:
         user.online = False
         db.session.add(user)
@@ -169,7 +169,7 @@ class Message(db.Model):
             'html' : self.html,
             'user_id' : self.user_id,
             '_links' : {
-                'self' : url_for('get_message', id=self.id)
+                'self' : url_for('get_message', id=self.id),
                 'user' : url_for('get_user', id=self.user_id)
             }
 
@@ -181,7 +181,6 @@ class Message(db.Model):
         self.html = bleach.linkify(bleach.clean(
             markdown(source, output_format='html'),
             tags = allowed_tags, strip = True))
-        ))
 
 
     def expand_links(self):
@@ -197,7 +196,7 @@ class Message(db.Model):
             except request.exceptions.ConnectionError:
                 continue
             if rv.status_code == 200: #if the link works
-                soup = BeautifulSoup(rv.text, 'html5lib')
+                soup = BeautifulSoup(rv.text, 'html5lib')   #parse the text into html5lib
                 title_tags = soup.select('title')
                 if len('title_tags') > 0:
                     title = title_tags[0].string.strip() #if the title exists get it from the title_tags list
@@ -257,11 +256,11 @@ def verify_token(token):
 @token_auth.error_handler
 def token_error():
     #return a 401 error to the client
-    return (jsonify({'error':'Authentication required'}, 401, '{WWW-Authenticate}' : 'Bearer realm = "Authentication required"'))
+    return (jsonify({'error':'Authentication required'}, 401, {'WWW-Authenticate' : 'Bearer realm = "Authentication required"'}))
 
 @token_optional_auth.verify_token
 def verify_optional_token(token):
-    #alternative token Authentication that allows anonymous logins
+    """Alternative token authentication that allows anonymous logins."""
     if token == "":
         #no token provided mark the logged in users as none and continue
         g.current_user = None
@@ -290,7 +289,7 @@ def before_request():
         del request_stats[0]
     request_stats.append(t)
 
-@app.route('/'):
+@app.route('/')
 def index():
     #serve client side application
     return render_template('index.html')
@@ -298,13 +297,13 @@ def index():
 @app.route('/api/users', methods=['POST'])
 def new_user():
     #Register a new user, this endpoint is publicly available
-    user = User.create(request.get_json() or {}):
-    if User.query.filter_by(nickname=user.nickname).first() in not None:
-        abort(400)
+    user = User.create(request.get_json() or {})
+    if User.query.filter_by(nickname=user.nickname).first() is not None:   #check if user exists
+        abort(400)  #status code for bad request
     db.session.add(user)
     db.session.commit()
     r = jsonify(user.to_dict())
-    r.status_code = 201
+    r.status_code = 201    #status code for created
     r.headers['location'] = url_for('get_user', id = user.id)
     return r
 
@@ -337,7 +336,7 @@ def edit_user(id):
     This endpoint is requires a valid user token.
     Note: users are only allowed to modify themselves.
     """
-    user = User.query.get_or_404(id):
+    user = User.query.get_or_404(id)
     if user != g.current_user:
         abort(403)
     user.from_dict(request.get_json() or {})
@@ -403,15 +402,15 @@ def edit_message(id):
     """
     msg = Message.query.get_or_404(id)
     if msg.user != g.current_user:
-        abort(403)
+        abort(403)    #status code for forbidden request
     msg.from_dict(request.get_json() or {})
     db.session.add(msg)
     db.session.commit()
-    return '', 204
+    return '', 204    #status code for no content
 
 @app.route('/stats', methods=['GET'])
 def get_stats():
-    return jasonify('requests_per_second' : len(request_stats) / 15)
+    return jasonify('requests_per_second' : len(request_stats) / 15)   #requests before 15 secs are deleted
 
 if __name__ == '__main__':
     db.create_all()
