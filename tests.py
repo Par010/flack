@@ -252,4 +252,92 @@ class FlackTests(unittest.TestCase):
 
             #get_message
             r, s, h = self.get(url, token_auth=token)
-            
+            self.assertEqual(s, 200)
+            self.assertEqual(r['source'], 'hello *world*!')
+            self.assertEqual(r['html'], 'hello <em>world</em>!')
+
+            #modify message
+            r, s, h = self.put(url, data = {'source' : 'hello *world*!'}, token_auth=token)
+            self.assertEqual(s, 204)
+
+            #check moddified message
+            r, s, h = self.put(url, token_auth=token)
+            self.assertEqual(s, 200)
+            self.assertEqual(r['source'], 'hello *world*!')
+            self.assertEqual(r['html'], 'hello <em>world</em>!')
+
+            #create a new message
+            with mock.patch('flack.time.time', return_value= int(time.time() + 5)):
+                r, s, h = self.post('/api/messages', data={'source' : 'bye *world*!'}, token_auth=token)
+                self.assertEqual(s, 201)
+
+            #get list of messages
+            r, s, h = self.get('api/messages', token_auth=token)
+            self.assertEqual(s, 200)
+            self.assertEqual(len(r['messages']), 2)
+            self.assertEqual(r['messages'][0]['source'], 'hello *world*!')
+            self.assertEqual(r['messages'][1]['source'], 'bye *world*!')
+
+            #get list of messages since
+            r, s, h = self.get('/api/messages?updated_since=' + str(int(time.time()), token_auth=token)
+            self.assertEqual(s, 200)
+            self.assertEqual(len(r['messages']), 1)
+            self.assertEqual(r['messages'][0]['source'], 'bye *world*!')
+
+            #create a second user and token
+            r, s, h = self.post('/api/users', data={'nickname' : 'bar', 'password' : 'baz'}, token_auth=token)
+            self.assertEqual(s, 201)
+            r, s, h = self.post('/api/tokens', basic_auth='bar:baz')
+            self.assertEqual(s, 200)
+            token2 = r['token']
+
+            #modify message from first user using second users token
+            r, s, h = self.put(url, data={'source' : '*hello* world!'}, token_auth=token2)
+            self.assertEqual(s, 403)
+
+            def responses():
+                rv = requests.Response()
+                rv.status_code = 200
+                rv.encoding = 'utf-8'
+                rv.content = (b'<html><head><title>foo</title>'
+                           b'<meta name="blah" content="blah">'
+                           b'<meta name="description" content="foo descr">'
+                           b'</head></html>')
+                yield rv
+                rv = requests.Response()
+                rv.status_code = 200
+                rv.encoding = 'utf-8'
+                rv._content = b'<html><head><title>bar</title></head></html>'
+                yield rv
+                rv = requests.Response()
+                rv.status_code = 200
+                rv.encoding = 'utf-8'
+                rv._content = (b'<html><head>'
+                                b'<meta name="description" content="baz descr">'
+                                b'</head></html>')
+                yield rv
+                yield requests.exceptions.ConnectionError()
+
+            with mock.patch('flack.requests.get', sife_effect=responses()):
+                r, s, h = self.post('api/messages', data= { 'source' : 'hello http://foo.com!'}, token_auth=token)
+                self.assertEqual(s, 201)
+                self.assertEqual(r['html'], 'hello <a href="http://foo.com" rel="nofollow">''http://foo.com</a>!<blockquote><p><a href="http://foo.com">''foo</a></p><p>foo descr</p></blockquote>')
+                r, s, h = self.post('api/messages', data={'source', 'hello foo.com!'}, token_auth=token)
+                self.assertEqual(s, 201)
+                self.assertEqual(r['html'], 'hello <a href="http://foo.com" rel="nofollow">'
+                'foo.com</a>!')
+
+if __name__ == '__main__':
+    tests_ok = unittest.main(verbosity=2, exit=False).result.wasSuccessful()
+
+    #print coverage report
+    cov.stop()
+    print('')
+    cov.report(omit=['tests.py', 'venv/*'])
+
+    #lint the code
+    print('')
+    lint_ok = subprocess.call(['flake8', '--ignore=E402', 'flack.py', 'tests.py']) == 0
+
+    #exit code (1:tests failed, 2: lint failed, 3: both failed)
+    sys.exit((0 if test_ok else 1) + (0 if lint_ok else 2))
