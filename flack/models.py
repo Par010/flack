@@ -7,7 +7,7 @@ import bleach
 from bs4 import BeautifulSoup
 import requests
 
-from .flack import db
+from . import db
 from .utils import timestamp, url_for
 
 class User(db.Model):
