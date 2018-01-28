@@ -60,7 +60,7 @@ def url_for(*args, **kwargs):  #couldn't understand this
 class User(db.Model):
     #user Model
     __tablename__ = 'users'
-    id = db.Column(db.integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True)
     created_at = db.Column(db.Integer, default=timestamp)
     updated_at = db.Column(db.Integer, default=timestamp)
     last_seen_at = db.Column(db.Integer, default=timestamp)
@@ -123,14 +123,14 @@ class User(db.Model):
         }
         }
 
-@staticmethod
-def find_offline_users():
-    #find the users that are offline
-    users = User.query.filter_by(User.last_seen_at < timestamp() - 60, User.online == True).all() #check if the user has been offline for more than a min
-    for user in users:
-        user.online = False
-        db.session.add(user)
-    db.session.commit()
+    @staticmethod
+    def find_offline_users():
+        #find the users that are offline
+        users = User.query.filter(User.last_seen_at < timestamp() - 60, User.online == True).all() #check if the user has been offline for more than a min
+        for user in users:
+            user.online = False
+            db.session.add(user)
+        db.session.commit()
 
 
 class Message(db.Model):
@@ -307,7 +307,7 @@ def new_user():
     r.headers['location'] = url_for('get_user', id = user.id)
     return r
 
-@app.route('api/users', methods=['GET'])
+@app.route('/api/users', methods=['GET'])
 def get_users():
     """Return list of users. endpoint is public but if the client has a token it should send it, indicationg that the user is online"""
     users = User.query.order_by(User.updated_at.asc(), User.nickname.asc())
@@ -317,19 +317,19 @@ def get_users():
         users = users.filter(
             User.updated_at > int(request.args.get('updated_since'))
         )
-    return jasonify({'users' : [user.to_dict() for user in users.all()]})
+    return jsonify({'users' : [user.to_dict() for user in users.all()]})
 
-@app.route('api/users/<id>', methods=['GET'])
+@app.route('/api/users/<id>', methods=['GET'])
 @token_optional_auth.login_required
 def get_user(id):
     """
     Return a user.
     This endpoint is publicly available, but if the client has a token it
     should send it, as that indicates to the server that the user is online."""
-    return jasonify(User.query.get_or_404(id).to_dict())
+    return jsonify(User.query.get_or_404(id).to_dict())
 
-@app.route('api/users/<id>', methods=['POST'])
-@token.auth.login_required
+@app.route('/api/users/<id>', methods=['POST'])
+@token_auth.login_required
 def edit_user(id):
     """
     Modify an existing user.
@@ -344,7 +344,7 @@ def edit_user(id):
     db.session.commit()
     return '',204
 
-@app.route('api/tokens', methods=['POST'])
+@app.route('/api/tokens', methods=['POST'])
 @basic_auth.login_required
 def new_token():
     """
@@ -352,12 +352,12 @@ def new_token():
     This endpoint is requires basic auth with nickname and password.
     """
     if g.current_user.token is None:
-        g.current_user.generate_token():
+        g.current_user.generate_token()
         db.session.add(g.current_user)
         db.session.commit()
     return jsonify({'token' : g.current_user.token})
 
-@app.route('api/tokens', methods=['DELETE'])
+@app.route('/api/tokens', methods=['DELETE'])
 @token_auth.login_required
 def revoke_token():
     """Revoke user token, this requires valid user token"""
@@ -366,7 +366,7 @@ def revoke_token():
     db.session.commit()
     return "", 204
 
-@app.route('api/messages', methods=['GET'])
+@app.route('/api/messages', methods=['GET'])
 @token_optional_auth.login_required
 def get_messages():
     """
@@ -380,19 +380,19 @@ def get_messages():
         #do not return msgs from more than a day ago
         since = day_ago
     msgs = Message.query.filter(Message.updated_at > since).order_by(Message.updated_at)
-    return jasonify({'messages' : [msg.to_dict for msg in msgs.all()]})
+    return jsonify({'messages' : [msg.to_dict for msg in msgs.all()]})
 
-@app.route('api/messages/<id>', methods=['GET'])
+@app.route('/api/messages/<id>', methods=['GET'])
 @token_optional_auth.login_required
-def get_messages(id):
+def get_message(id):
     """
     Return a message.
     This endpoint is publicly available, but if the client has a token it
     should send it, as that indicates to the server that the user is online.
     """
-    return jasonify(Message.query.get_or_404(id).to_dict)
+    return jsonify(Message.query.get_or_404(id).to_dict)
 
-@app.route('api/messages/<id>', methods=['PUT'])
+@app.route('/api/messages/<id>', methods=['PUT'])
 @token_auth.login_required
 def edit_message(id):
     """
@@ -410,7 +410,7 @@ def edit_message(id):
 
 @app.route('/stats', methods=['GET'])
 def get_stats():
-    return jasonify('requests_per_second' : len(request_stats) / 15)   #requests before 15 secs are deleted
+    return jsonify({'requests_per_second' : len(request_stats) / 15})   #requests before 15 secs are deleted
 
 if __name__ == '__main__':
     db.create_all()

@@ -333,7 +333,7 @@ if __name__ == '__main__':
     #print coverage report
     cov.stop()
     print('')
-    cov.report(omit=['tests.py', 'venv/*'])
+    cov.report(omit=['tests.py', 'myenv/*'])
 
     #lint the code
     print('')
