@@ -339,7 +339,7 @@ class FlackTests(unittest.TestCase):
             yield rv
             yield requests.exceptions.ConnectionError()
 
-        with mock.patch('flack.requests.get', side_effect=responses()):
+        with mock.patch('models.requests.get', side_effect=responses()):
             r, s, h = self.post(
                 '/api/messages',
                 data={'source': 'hello http://foo.com!'},
@@ -394,7 +394,7 @@ if __name__ == '__main__':
 
     # lint the code
     print('')
-    lint_ok = subprocess.call(['flake8', '--ignore=E402', 'flack.py', 'utils.py',
+    lint_ok = subprocess.call(['flake8', '--ignore=E402', 'flack.py', 'models.py', 'utils.py',
                                'tests.py']) == 0
 
     # exit code (1: tests failed, 2: lint failed, 3: both failed)
