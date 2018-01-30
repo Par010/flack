@@ -3,7 +3,7 @@ from .. import db
 from ..auth import token_auth, token_optional_auth
 from ..models import Message
 from ..utils import timestamp, url_for
-from ..tasls import async
+from ..tasks import async
 from . import api
 
 
