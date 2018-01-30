@@ -3,9 +3,9 @@ import sys
 
 from flask_script import Manager
 
-from flack import app, db
+from flack import create_app, db
 
-manager = Manager(app)
+manager = Manager(create_app)
 
 @manager.command
 def createdb(drop_first=False):
@@ -28,6 +28,6 @@ def lint():
     if lint:
         print('OK')
     sys.exit(lint)
-    
+
 if __name__ == '__main__':
     manager.run()
