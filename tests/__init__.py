@@ -18,6 +18,6 @@ def run():
     #print coverage report
     cov.stop()
     print('')
-    cov.report(omit=['manage.py','tests/*', 'myenv*/*'])
+    cov.report(omit=['manage.py','tests/*', 'myenv1*/*'])
 
     sys.exit(0 if ok else 1)
