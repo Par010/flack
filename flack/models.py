@@ -43,7 +43,9 @@ class User(db.Model):
     def ping(self):
         """Marks the user as recently seen and online."""
         self.last_seen_at = timestamp()
+        last_online = self.online
         self.online = True
+        return last_online != self.online
 
     @staticmethod
     def create(data):
@@ -86,6 +88,8 @@ class User(db.Model):
             user.online = False
             db.session.add(user)
         db.session.commit()
+        return users
+        
 
 
 class Message(db.Model):
